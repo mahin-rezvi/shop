@@ -2,13 +2,13 @@
 
 import { useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
-import { prisma } from "@/lib/prisma";
 import Link from "next/link";
-import { UserCircle, LogOut, Package, Heart, MapPin } from "lucide-react";
+import { UserCircle, Package, Heart, MapPin } from "lucide-react";
+import type { Order } from "@/lib/types";
 
 export default function AccountPage() {
   const { user, isLoaded } = useUser();
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState("orders");
 
   useEffect(() => {
@@ -47,8 +47,7 @@ export default function AccountPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8 bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg">
+      <div className="mb-8 rounded-lg border bg-card p-6">
         <div className="flex items-center gap-4">
           <UserCircle className="w-16 h-16 text-primary" />
           <div>
@@ -101,7 +100,7 @@ export default function AccountPage() {
           <h2 className="text-2xl font-bold mb-4">Your Orders</h2>
           {orders.length > 0 ? (
             <div className="space-y-4">
-              {orders.map((order: any) => (
+              {orders.map((order) => (
                 <div key={order.id} className="border rounded-lg p-4 hover:shadow-md transition">
                   <div className="flex justify-between items-start mb-2">
                     <div>
@@ -111,9 +110,11 @@ export default function AccountPage() {
                       </p>
                     </div>
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      order.status === 'DELIVERED' ? 'bg-green-100 text-green-800' :
-                      order.status === 'SHIPPED' ? 'bg-blue-100 text-blue-800' :
-                      'bg-yellow-100 text-yellow-800'
+                      order.status === "DELIVERED"
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                        : order.status === "SHIPPED"
+                          ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
+                          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                     }`}>
                       {order.status}
                     </span>

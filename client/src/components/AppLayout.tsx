@@ -24,7 +24,7 @@ export function AppLayout() {
               DH
             </span>
             <span className="font-display text-lg font-semibold tracking-tight text-white">
-              Dealhaven<span className="text-brand-400">Pro</span>
+              Dealhaven<span className="text-brand-400"></span>
             </span>
           </Link>
           <nav className="ml-auto flex items-center gap-1 text-sm font-medium text-zinc-300">

@@ -3,21 +3,20 @@ import { cache } from "@/lib/redis";
 import { ProductCard } from "@/components/product-card";
 import { ProductFilters } from "@/components/product-filters";
 
-export const revalidate = 60;
+export const dynamic = "force-dynamic";
 
 interface ShopPageProps {
-  searchParams: Promise<{
+  searchParams: {
     q?: string;
     category?: string;
     sort?: string;
     page?: string;
     minPrice?: string;
     maxPrice?: string;
-  }>;
+  };
 }
 
-export default async function ShopPage(props: ShopPageProps) {
-  const searchParams = await props.searchParams;
+export default async function ShopPage({ searchParams }: ShopPageProps) {
   const query = searchParams.q || "";
   const category = searchParams.category;
   const sort = searchParams.sort || "newest";
@@ -28,7 +27,7 @@ export default async function ShopPage(props: ShopPageProps) {
 
   // Build cache key
   const cacheKey = `products:${query}:${category}:${sort}:${page}:${minPrice}:${maxPrice}`;
-  let products = await cache.get(cacheKey);
+  let products = await cache.get<any[]>(cacheKey);
 
   if (!products) {
     // Build query filters
@@ -73,21 +72,29 @@ export default async function ShopPage(props: ShopPageProps) {
 
     const skip = (page - 1) * pageSize;
 
-    products = await prisma.product.findMany({
-      where: where.AND ? where : undefined,
-      include: { category: true },
-      orderBy,
-      skip,
-      take: pageSize,
-    });
+    try {
+      products = await prisma.product.findMany({
+        where: where.AND ? where : undefined,
+        include: { category: true },
+        orderBy,
+        skip,
+        take: pageSize,
+      });
 
-    await cache.set(cacheKey, products, 3600);
+      await cache.set(cacheKey, products, 3600);
+    } catch (error) {
+      console.error("Failed to fetch shop products:", error);
+      products = [];
+    }
   }
 
-  const categories = await prisma.category.findMany();
+  const categories = await prisma.category.findMany().catch((error) => {
+    console.error("Failed to fetch shop categories:", error);
+    return [];
+  });
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="mx-auto max-w-6xl py-6">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Shop</h1>
         <p className="text-muted-foreground">

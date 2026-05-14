@@ -1,9 +1,8 @@
-import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
+const { withSentryConfig } = require("@sentry/nextjs");
 
-const nextConfig: NextConfig = {
+/** @type {import("next").NextConfig} */
+const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   images: {
     remotePatterns: [
       {
@@ -14,23 +13,26 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "**.cloudinary.com",
       },
+      {
+        protocol: "https",
+        hostname: "via.placeholder.com",
+      },
     ],
-  },
-  env: {
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-    NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
   },
 };
 
-export default withSentryConfig(nextConfig, {
+const sentryOptions = {
   org: "dealhaven",
   project: "dealhaven-pro",
   authToken: process.env.SENTRY_AUTH_TOKEN,
-  silent: !process.env.CI,
+  silent: true,
   widenClientFileUpload: true,
   tunnelRoute: "/monitoring",
   hideSourceMaps: true,
   disableLogger: true,
-  automaticVercelMonitors: true,
-});
+};
+
+module.exports =
+  process.env.SENTRY_AUTH_TOKEN || process.env.NEXT_PUBLIC_SENTRY_DSN
+    ? withSentryConfig(nextConfig, sentryOptions)
+    : nextConfig;

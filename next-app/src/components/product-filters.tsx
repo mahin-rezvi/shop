@@ -10,35 +10,57 @@ interface ProductFiltersProps {
 export function ProductFilters({ categories }: ProductFiltersProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const activeCategory = searchParams.get("category") || "";
+  const activeSort = searchParams.get("sort") || "newest";
 
   const handleCategoryChange = (slug: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("category", slug);
+    if (slug) {
+      params.set("category", slug);
+    } else {
+      params.delete("category");
+    }
     params.set("page", "1");
     router.push(`/shop?${params.toString()}`);
   };
 
-  const handlePriceChange = (min: number, max: number) => {
+  const handlePriceChange = (min: number, max?: number) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("minPrice", min.toString());
-    params.set("maxPrice", max.toString());
+    params.set("minPrice", String(min * 100));
+    if (max) {
+      params.set("maxPrice", String(max * 100));
+    } else {
+      params.delete("maxPrice");
+    }
     params.set("page", "1");
     router.push(`/shop?${params.toString()}`);
+  };
+
+  const clearFilters = () => {
+    router.push("/shop");
   };
 
   return (
-    <div className="space-y-6">
-      {/* Categories */}
+    <div className="space-y-6 rounded-lg border bg-card p-4 lg:sticky lg:top-24">
       <div>
-        <h3 className="font-semibold mb-4">Categories</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="font-semibold">Categories</h3>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Reset
+          </button>
+        </div>
         <div className="space-y-2">
           <label className="flex items-center cursor-pointer">
             <input
               type="radio"
               name="category"
               value=""
-              onChange={() => router.push("/shop")}
-              defaultChecked={!searchParams.get("category")}
+              onChange={() => handleCategoryChange("")}
+              checked={!activeCategory}
               className="w-4 h-4"
             />
             <span className="ml-2 text-sm">All Categories</span>
@@ -51,7 +73,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
                 name="category"
                 value={category.slug}
                 onChange={() => handleCategoryChange(category.slug)}
-                checked={searchParams.get("category") === category.slug}
+                checked={activeCategory === category.slug}
                 className="w-4 h-4"
               />
               <span className="ml-2 text-sm">
@@ -85,7 +107,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
             $100 - $500
           </button>
           <button
-            onClick={() => handlePriceChange(500, 10000)}
+            onClick={() => handlePriceChange(500)}
             className="w-full text-left text-sm px-3 py-2 hover:bg-muted rounded"
           >
             $500+
@@ -103,7 +125,7 @@ export function ProductFilters({ categories }: ProductFiltersProps) {
             params.set("page", "1");
             router.push(`/shop?${params.toString()}`);
           }}
-          defaultValue={searchParams.get("sort") || "newest"}
+          value={activeSort}
           className="w-full px-3 py-2 rounded border bg-background"
         >
           <option value="newest">Newest</option>

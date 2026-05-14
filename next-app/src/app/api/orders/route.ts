@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { cache } from "@/lib/redis";
+import { requireDbUser } from "@/lib/auth";
 
 export async function GET() {
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    const { user, response } = await requireDbUser();
+    if (!user) return response;
 
     const orders = await prisma.order.findMany({
-      where: { userId },
+      where: { userId: user.id },
       include: {
         items: {
           include: { product: true },
@@ -41,21 +35,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    const { user, response } = await requireDbUser();
+    if (!user) return response;
 
     const body = await request.json();
-    const { paymentMethodId } = body;
+    const { paymentMethodId, paymentMethod = "COD", notes } = body;
 
-    // Get cart items
     const cartItems = await prisma.cartItem.findMany({
-      where: { userId },
+      where: { userId: user.id },
       include: { product: true },
     });
 
@@ -66,63 +53,108 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate total
+    const outOfStockItem = cartItems.find(
+      (item) => item.product.stock < item.quantity
+    );
+    if (outOfStockItem) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `${outOfStockItem.product.name} does not have enough stock`,
+        },
+        { status: 400 }
+      );
+    }
+
     const total = cartItems.reduce(
       (sum, item) => sum + item.product.price * item.quantity,
       0
     );
 
-    // Create order
-    const order = await prisma.order.create({
-      data: {
-        orderNumber: `ORD-${Date.now()}`,
-        userId,
-        total,
-        items: {
-          create: cartItems.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
+    const order = await prisma.$transaction(async (tx) => {
+      const createdOrder = await tx.order.create({
+        data: {
+          orderNumber: `ORD-${Date.now()}`,
+          userId: user.id,
+          total,
+          notes,
+          status: paymentMethod === "COD" ? "CONFIRMED" : "PENDING",
+          items: {
+            create: cartItems.map((item) => ({
+              productId: item.productId,
+              quantity: item.quantity,
+              price: item.product.price,
+            })),
+          },
         },
-      },
-      include: { items: true },
+        include: {
+          items: {
+            include: { product: true },
+          },
+          payment: true,
+        },
+      });
+
+      await Promise.all(
+        cartItems.map((item) =>
+          tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { decrement: item.quantity } },
+          })
+        )
+      );
+
+      await tx.payment.create({
+        data: {
+          orderId: createdOrder.id,
+          method: paymentMethod === "CARD" ? "CARD" : "COD",
+          status: paymentMethod === "COD" ? "PENDING" : "PENDING",
+          amount: total,
+        },
+      });
+
+      await tx.cartItem.deleteMany({
+        where: { userId: user.id },
+      });
+
+      return createdOrder;
     });
 
-    // Create payment
-    if (stripe && paymentMethodId) {
-      try {
-        const paymentIntent = await stripe.paymentIntents.create({
-          amount: total,
-          currency: "usd",
-          payment_method: paymentMethodId,
-          confirm: true,
-          metadata: {
-            orderId: order.id,
-          },
-        });
+    if (stripe && paymentMethod === "CARD" && paymentMethodId) {
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: total,
+        currency: "usd",
+        payment_method: paymentMethodId,
+        confirm: true,
+        metadata: {
+          orderId: order.id,
+        },
+      });
 
-        await prisma.payment.create({
+      await prisma.payment.update({
+        where: { orderId: order.id },
+        data: {
+          method: "CARD",
+          status:
+            paymentIntent.status === "succeeded" ? "COMPLETED" : "PENDING",
+          stripeId: paymentIntent.id,
+          amount: total,
+        },
+      });
+
+      if (paymentIntent.status === "succeeded") {
+        await prisma.order.update({
+          where: { id: order.id },
           data: {
-            orderId: order.id,
-            method: "CARD",
-            status: paymentIntent.status === "succeeded" ? "COMPLETED" : "PENDING",
-            stripeId: paymentIntent.id,
-            amount: total,
+            status: "CONFIRMED",
           },
         });
-      } catch (error) {
-        console.error("Stripe payment failed:", error);
       }
     }
 
-    // Clear cart
-    await prisma.cartItem.deleteMany({
-      where: { userId },
-    });
-
-    // Clear cache
     await cache.clear("products:*");
+    await cache.clear("api:products:*");
+    await cache.delete("featured-products");
 
     return NextResponse.json(
       {

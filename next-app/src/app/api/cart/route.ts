@@ -1,38 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { requireDbUser } from "@/lib/auth";
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    // Get or create user
-    let user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      // For now, we'll return empty cart
-      // In production, fetch from Clerk
-      return NextResponse.json({
-        success: true,
-        data: {
-          items: [],
-          total: 0,
-        },
-      });
-    }
+    const { user, response } = await requireDbUser();
+    if (!user) return response;
 
     const cartItems = await prisma.cartItem.findMany({
-      where: { userId },
-      include: { product: true },
+      where: { userId: user.id },
+      include: { product: { include: { category: true } } },
+      orderBy: { updatedAt: "desc" },
     });
 
     const total = cartItems.reduce(
@@ -58,14 +36,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
+    const { user, response } = await requireDbUser();
+    if (!user) return response;
 
     const body = await request.json();
     const { productId, quantity } = body;
@@ -77,40 +49,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get or create user
-    let user = await prisma.user.findUnique({
-      where: { id: userId },
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
     });
 
-    if (!user) {
-      // Create user if doesn't exist
-      user = await prisma.user.create({
-        data: {
-          id: userId,
-          email: "temp@example.com", // Will be updated via Clerk webhook
-          name: "User",
-        },
-      });
+    if (!product) {
+      return NextResponse.json(
+        { success: false, message: "Product not found" },
+        { status: 404 }
+      );
     }
 
-    // Add or update cart item
+    if (product.stock < 1) {
+      return NextResponse.json(
+        { success: false, message: "Product is out of stock" },
+        { status: 400 }
+      );
+    }
+
     const existingItem = await prisma.cartItem.findUnique({
-      where: { userId_productId: { userId, productId } },
+      where: { userId_productId: { userId: user.id, productId } },
     });
 
     if (existingItem) {
-      // Update quantity
       await prisma.cartItem.update({
         where: { id: existingItem.id },
-        data: { quantity: existingItem.quantity + quantity },
+        data: {
+          quantity: Math.min(existingItem.quantity + quantity, product.stock),
+        },
       });
     } else {
-      // Create new cart item
       await prisma.cartItem.create({
         data: {
-          userId,
+          userId: user.id,
           productId,
-          quantity,
+          quantity: Math.min(quantity, product.stock),
         },
       });
     }
@@ -123,6 +96,28 @@ export async function POST(request: NextRequest) {
     console.error("Failed to add to cart:", error);
     return NextResponse.json(
       { success: false, message: "Failed to add to cart" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE() {
+  try {
+    const { user, response } = await requireDbUser();
+    if (!user) return response;
+
+    await prisma.cartItem.deleteMany({
+      where: { userId: user.id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Cart cleared",
+    });
+  } catch (error) {
+    console.error("Failed to clear cart:", error);
+    return NextResponse.json(
+      { success: false, message: "Failed to clear cart" },
       { status: 500 }
     );
   }

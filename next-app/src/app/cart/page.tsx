@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ShoppingCart, ArrowLeft } from "lucide-react";
+import type { CartItem } from "@/lib/types";
 
 export default function CartPage() {
-  const [cartItems, setCartItems] = useState([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -80,7 +81,7 @@ export default function CartPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-4">
-            {cartItems.map((item: any) => (
+            {cartItems.map((item) => (
               <div key={item.id} className="border rounded-lg p-4 flex gap-4">
                 <div className="w-24 h-24 bg-muted rounded flex items-center justify-center text-3xl">
                   📦
